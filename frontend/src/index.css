@@ -1,0 +1,8 @@
+/* frontend/src/index.css */
+@import "tailwindcss";
+
+/* This is how we add the custom colors for Nanay's Market in v4 */
+@theme {
+  --color-primaryBlue: #4A90E2;
+  --color-lightBg: #F3F4F6;
+}
