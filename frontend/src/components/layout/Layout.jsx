@@ -14,12 +14,7 @@ export default function Layout({ children }) {
         {/* Topbar */}
         <header className="bg-white h-16 border-b border-gray-200 flex items-center justify-between px-8">
           <div className="relative w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search..." 
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryBlue"
-            />
+          
           </div>
           <div className="flex items-center gap-2 text-gray-700">
             <UserCircle size={24} className="text-primaryBlue" />

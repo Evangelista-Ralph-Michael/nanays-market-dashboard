@@ -7,7 +7,6 @@ export default function Finances() {
   const [finances, setFinances] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  // New State for Year AND Month
   const [selectedYear, setSelectedYear] = useState('2026');
   const [selectedMonth, setSelectedMonth] = useState('All');
 
@@ -15,8 +14,12 @@ export default function Finances() {
     const fetchFinances = async () => {
       setIsLoading(true);
       try {
-        // Send both Year and Month to our upgraded Python backend
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/finances?year=${selectedYear}&month=${selectedMonth}`);
+        const token = localStorage.getItem('token'); // <-- 1. GET THE TOKEN
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/finances?year=${selectedYear}&month=${selectedMonth}`, {
+          headers: {
+            'Authorization': `Bearer ${token}` // <-- 2. SEND THE TOKEN
+          }
+        });
         const result = await response.json();
         if (result.status === 'success') {
           setFinances(result.data);
@@ -29,7 +32,7 @@ export default function Finances() {
     };
 
     fetchFinances();
-  }, [selectedYear, selectedMonth]); // Re-fetch whenever either one changes!
+  }, [selectedYear, selectedMonth]);
 
   const formatMoney = (amount) => {
     return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
@@ -37,7 +40,6 @@ export default function Finances() {
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
-      // Dynamic label: "Mar 2026" or "Day 02"
       const displayLabel = selectedMonth === 'All' ? `${label} ${selectedYear}` : `Day ${label}`;
       
       return (
@@ -56,7 +58,7 @@ export default function Finances() {
     return null;
   };
 
-  if (isLoading) {
+  if (isLoading && !finances) {
     return <div className="flex items-center justify-center h-[80vh]"><Loader2 className="animate-spin text-primaryBlue w-12 h-12" /></div>;
   }
 
@@ -91,7 +93,7 @@ export default function Finances() {
           </select>
         </div>
 
-        {/* New Month Picker */}
+        {/* Month Picker */}
         <div className="flex items-center gap-3 border-2 border-primaryBlue bg-white rounded-xl px-4 py-2 shadow-sm w-fit">
           <Filter className="text-primaryBlue" size={20} />
           <span className="font-bold text-gray-800">Month</span>
@@ -133,7 +135,7 @@ export default function Finances() {
         </div>
         <div className="bg-primaryBlue text-white rounded-2xl p-6 shadow-md text-center">
           <h2 className="text-sm font-medium mb-2 opacity-90">Profit Margin</h2>
-          <p className="text-3xl font-bold">{finances?.profit_margin.toFixed(1)}%</p>
+          <p className="text-3xl font-bold">{finances?.profit_margin?.toFixed(1) || 0}%</p>
         </div>
       </div>
 
@@ -151,7 +153,7 @@ export default function Finances() {
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
               <XAxis 
-                dataKey="label"  // This will dynamically be "Mar" or "02" based on what the backend sends!
+                dataKey="label"
                 axisLine={false} 
                 tickLine={false} 
                 tick={{ fill: '#6B7280', fontSize: 12, fontWeight: 600 }} 

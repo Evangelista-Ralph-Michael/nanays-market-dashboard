@@ -3,8 +3,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import supabase # Import our database client
 import calendar
+import bcrypt  # <-- We are using this directly now!
+import jwt
+from datetime import datetime, timedelta
+import re
+from fastapi import Header, HTTPException
+from pydantic import BaseModel
+from fastapi import Depends, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-app = FastAPI(title="Nanay's Market API")
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,11 +36,79 @@ def test_db_connection():
     except Exception as e:
         return {"status": "Error connecting to Supabase", "details": str(e)}
     
-@app.get("/api/inventory")
-def get_inventory():
+# --- AUTHENTICATION SETUP ---
+SECRET_KEY = "your-super-secret-key-change-this-later" 
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_HOURS = 24
+
+# ---> PASTE THESE CLASSES RIGHT HERE <---
+class UserSignup(BaseModel):
+    full_name: str
+    username: str
+    email: str
+    business_name: str
+    password: str
+    confirm_password: str
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class AccountUpdate(BaseModel):
+    full_name: str
+    username: str
+    business_name: str
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_new_password: str
+# ----------------------------------------
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(
+        plain_password.encode('utf-8'), 
+        hashed_password.encode('utf-8')
+    )
+
+def get_password_hash(password: str) -> str:
+    # Safely convert to bytes, generate a salt, and hash using native bcrypt
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed_password.decode('utf-8')
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# This tells FastAPI to look for the "Authorization: Bearer <token>" header
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
+    token = credentials.credentials
     try:
-        # Fetch all records from the 'items' table, ordered by item_name
-        response = supabase.table("items").select("*").order("item_name").execute()
+        # Decode the token using your secret key
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return user_id # Returns the UUID of the logged-in user!
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+
+@app.get("/api/inventory")
+def get_inventory(user_id: str = Depends(get_current_user)): # <-- 1. Require Token
+    try:
+        # 2. Filter the database to ONLY show this user's items
+        response = supabase.table("items").select("*").eq("user_id", user_id).order("id").execute()
         return {"status": "success", "data": response.data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -49,10 +125,12 @@ class ItemCreate(BaseModel):
     selling_price: float
 
 @app.post("/api/inventory")
-def add_item(item: ItemCreate):
+def create_item(item: dict, user_id: str = Depends(get_current_user)): # <-- 1. Require Token
     try:
-        data = supabase.table("items").insert(item.dict()).execute()
-        return {"status": "success", "data": data.data}
+        # 2. Attach the user_id to the new item before saving
+        item["user_id"] = user_id 
+        response = supabase.table("items").insert(item).execute()
+        return {"status": "success", "data": response.data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -83,11 +161,10 @@ class TransactionCreate(BaseModel):
 
 # 2. Add the GET endpoint to fetch transactions (with an optional date filter)
 @app.get("/api/transactions")
-def get_transactions(date: str = None):
+def get_transactions(date: str = None, user_id: str = Depends(get_current_user)): # Require Token
     try:
-        # We use a join here: "items(item_name)" pulls the name from the items table!
-        query = supabase.table("transactions").select("*, items(item_name)")
-        
+        # Add .eq("user_id", user_id) to only get this user's sales
+        query = supabase.table("transactions").select("*, items(item_name)").eq("user_id", user_id)
         if date:
             query = query.eq("transaction_date", date)
             
@@ -96,26 +173,22 @@ def get_transactions(date: str = None):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# 3. Add the POST endpoint to create a new transaction
-# backend/main.py (Replace your POST and PUT endpoints)
-
 @app.post("/api/transactions")
-def add_transaction(txn: TransactionCreate):
+def add_transaction(txn: TransactionCreate, user_id: str = Depends(get_current_user)): # Require Token
     try:
         item_response = supabase.table("items").select("selling_price, quantity").eq("id", txn.item_id).single().execute()
         item_data = item_response.data
         
-        # --- NEW SECURITY CHECK ---
         if txn.quantity_sold > item_data["quantity"]:
             return {"status": "error", "message": f"Not enough stock! Only {item_data['quantity']} available."}
-        # --------------------------
 
         total_amount = item_data["selling_price"] * txn.quantity_sold
         new_txn = {
             "item_id": txn.item_id,
             "transaction_date": txn.transaction_date,
             "quantity_sold": txn.quantity_sold,
-            "total_amount": total_amount
+            "total_amount": total_amount,
+            "user_id": user_id # Attach the user ID here!
         }
         transaction_response = supabase.table("transactions").insert(new_txn).execute()
         
@@ -125,7 +198,7 @@ def add_transaction(txn: TransactionCreate):
         return {"status": "success", "data": transaction_response.data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
+    
 @app.put("/api/transactions/{txn_id}")
 def update_transaction(txn_id: str, txn: TransactionCreate):
     try:
@@ -182,50 +255,72 @@ def delete_transaction(txn_id: str):
 # backend/main.py (Update the get_analytics function)
 
 @app.get("/api/analytics")
-def get_analytics():
+def get_analytics(year: str = "2026", month: str = "All", user_id: str = Depends(get_current_user)): # Require Token
     try:
-        txn_response = supabase.table("transactions").select("transaction_date, quantity_sold, total_amount, items(capital)").execute()
+        import calendar
+        if month == "All":
+            start_date = f"{year}-01-01"
+            end_date = f"{year}-12-31"
+        else:
+            num_days = calendar.monthrange(int(year), int(month))[1]
+            start_date = f"{year}-{month}-01"
+            end_date = f"{year}-{month}-{num_days}"
+            
+        # Add .eq("user_id", user_id)
+        txn_response = supabase.table("transactions")\
+            .select("transaction_date, quantity_sold, total_amount, items(capital)")\
+            .gte("transaction_date", start_date)\
+            .lte("transaction_date", end_date)\
+            .eq("user_id", user_id)\
+            .execute()
+            
         transactions = txn_response.data
         
+        # ... (Keep all your chart_dict and loop logic exactly the same) ...
         total_revenue = 0
         total_cost = 0
-        daily_revenue = {} # Dictionary to hold our chart data
+        chart_dict = {}
         
+        if month == "All":
+            months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            chart_dict = {m: {"date": m, "revenue": 0} for m in months}
+        else:
+            num_days = calendar.monthrange(int(year), int(month))[1]
+            for d in range(1, num_days + 1):
+                day_str = str(d).zfill(2)
+                full_date = f"{year}-{month}-{day_str}"
+                chart_dict[full_date] = {"date": full_date, "revenue": 0}
+
         for txn in transactions:
             total_revenue += txn["total_amount"]
             item_capital = txn["items"]["capital"] if txn["items"] else 0
             total_cost += (item_capital * txn["quantity_sold"])
             
-            # Group revenue by date for the chart
-            date = txn["transaction_date"]
-            if date in daily_revenue:
-                daily_revenue[date] += txn["total_amount"]
+            date_str = txn["transaction_date"]
+            if month == "All":
+                month_idx = int(date_str.split("-")[1]) - 1
+                label = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month_idx]
+                chart_dict[label]["revenue"] += txn["total_amount"]
             else:
-                daily_revenue[date] = txn["total_amount"]
+                if date_str in chart_dict:
+                    chart_dict[date_str]["revenue"] += txn["total_amount"]
             
         gross_profit = total_revenue - total_cost
         net_profit = gross_profit 
         
-        alerts_response = supabase.table("items").select("item_name, quantity").lte("quantity", 5).order("quantity").execute()
-        
-        # Format the daily revenue for Recharts
-        # Converts {"2026-03-01": 500} into [{"date": "2026-03-01", "revenue": 500}]
-        chart_data = [{"date": k, "revenue": v} for k, v in sorted(daily_revenue.items())]
+        # Add .eq("user_id", user_id) to stock alerts
+        alerts_response = supabase.table("items").select("item_name, quantity").lte("quantity", 5).eq("user_id", user_id).order("quantity").execute()
         
         return {
             "status": "success",
             "data": {
-                "total_revenue": total_revenue,
-                "total_cost": total_cost,
-                "gross_profit": gross_profit,
-                "net_profit": net_profit,
-                "stock_alerts": alerts_response.data,
-                "chart_data": chart_data # Send the new chart data!
+                "total_revenue": total_revenue, "total_cost": total_cost,
+                "gross_profit": gross_profit, "net_profit": net_profit,
+                "stock_alerts": alerts_response.data, "chart_data": list(chart_dict.values())
             }
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
-    
 # backend/main.py
 # ... (keep all your existing code above) ...
 
@@ -234,23 +329,23 @@ def get_analytics():
 # backend/main.py (Replace the get_finances function)
 
 @app.get("/api/finances")
-def get_finances(year: str = "2026", month: str = "All"):
+def get_finances(year: str = "2026", month: str = "All", user_id: str = Depends(get_current_user)): # <-- 1. Require Token
     try:
-        # 1. Use proper Date Ranges (>= start_date AND <= end_date) instead of text matching
+        import calendar
         if month == "All":
             start_date = f"{year}-01-01"
             end_date = f"{year}-12-31"
         else:
-            # calendar.monthrange figures out exactly how many days are in that specific month
             num_days = calendar.monthrange(int(year), int(month))[1]
             start_date = f"{year}-{month}-01"
             end_date = f"{year}-{month}-{num_days}"
             
-        # Use .gte (Greater Than or Equal) and .lte (Less Than or Equal)
+        # 2. Add .eq("user_id", user_id) to only get this user's data
         txn_response = supabase.table("transactions")\
             .select("transaction_date, quantity_sold, total_amount, items(capital)")\
             .gte("transaction_date", start_date)\
             .lte("transaction_date", end_date)\
+            .eq("user_id", user_id)\
             .execute()
             
         transactions = txn_response.data
@@ -259,7 +354,6 @@ def get_finances(year: str = "2026", month: str = "All"):
         total_cost = 0
         chart_dict = {}
         
-        # 2. Prepare the empty chart data
         if month == "All":
             months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
             chart_dict = {m: {"label": m, "rev": 0, "cost": 0} for m in months}
@@ -269,7 +363,6 @@ def get_finances(year: str = "2026", month: str = "All"):
                 full_date = f"{year}-{month}-{day_str}"
                 chart_dict[full_date] = {"label": day_str, "rev": 0, "cost": 0}
 
-        # 3. Process the transactions
         for txn in transactions:
             total_revenue += txn["total_amount"]
             item_capital = txn["items"]["capital"] if txn["items"] else 0
@@ -278,7 +371,6 @@ def get_finances(year: str = "2026", month: str = "All"):
             
             date_str = txn["transaction_date"]
             
-            # 4. Group the data appropriately
             if month == "All":
                 month_idx = int(date_str.split("-")[1]) - 1
                 label = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month_idx]
@@ -302,5 +394,157 @@ def get_finances(year: str = "2026", month: str = "All"):
                 "chart_data": list(chart_dict.values())
             }
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    
+# --- AUTH ENDPOINTS ---
+# (Leave your /api/auth/signup and /api/auth/login endpoints exactly as they are!)
+
+# --- AUTH ENDPOINTS ---
+
+@app.post("/api/auth/signup")
+def signup(user: UserSignup):
+    # 1. Validate Passwords Match
+    if user.password != user.confirm_password:
+        return {"status": "error", "message": "Passwords do not match."}
+    
+    # 2. Validate Password Strength (Regex: 8 chars, 1 Upper, 1 Lower, 1 Number)
+    if not re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,}$", user.password):
+        return {"status": "error", "message": "Password must be at least 8 characters long and include an uppercase letter, a lowercase letter, and a number."}
+
+    try:
+        # 3. Check if username or email already exists
+        existing_user = supabase.table("users").select("*").or_(f"username.eq.{user.username},email.eq.{user.email}").execute()
+        if len(existing_user.data) > 0:
+            return {"status": "error", "message": "Username or Email already taken."}
+
+        # 4. Create User
+        hashed_pw = get_password_hash(user.password)
+        new_user = {
+            "full_name": user.full_name,
+            "username": user.username,
+            "email": user.email,
+            "business_name": user.business_name,
+            "password_hash": hashed_pw,
+            "role": "user" # Default role
+        }
+        
+        response = supabase.table("users").insert(new_user).execute()
+        return {"status": "success", "message": "Account created successfully!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/auth/login")
+def login(user: UserLogin):
+    try:
+        # 1. Find user by username
+        response = supabase.table("users").select("*").eq("username", user.username).execute()
+        if len(response.data) == 0:
+            return {"status": "error", "message": "Invalid username or password."}
+            
+        db_user = response.data[0]
+        
+        # 2. Verify password
+        if not verify_password(user.password, db_user["password_hash"]):
+            return {"status": "error", "message": "Invalid username or password."}
+            
+        # 3. Generate JWT Token
+        access_token = create_access_token(data={
+            "sub": db_user["id"], 
+            "username": db_user["username"],
+            "business_name": db_user["business_name"],
+            "role": db_user["role"]
+        })
+        
+        return {
+            "status": "success", 
+            "token": access_token,
+            "user": {
+                "id": db_user["id"],
+                "business_name": db_user["business_name"],
+                "full_name": db_user["full_name"],
+                "role": db_user["role"]
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.put("/api/auth/update-account")
+def update_account(data: AccountUpdate, user_id: str = Depends(get_current_user)):
+    try:
+        # Check if the new username is already taken by a different user
+        existing = supabase.table("users").select("id").eq("username", data.username).neq("id", user_id).execute()
+        if len(existing.data) > 0:
+            return {"status": "error", "message": "Username is already taken by someone else."}
+            
+        # Update the user's data
+        response = supabase.table("users").update({
+            "full_name": data.full_name,
+            "username": data.username,
+            "business_name": data.business_name
+        }).eq("id", user_id).execute()
+        
+        return {"status": "success", "data": response.data[0]}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.put("/api/auth/change-password")
+def change_password(data: PasswordChange, user_id: str = Depends(get_current_user)):
+    if data.new_password != data.confirm_new_password:
+        return {"status": "error", "message": "New passwords do not match."}
+        
+    # Validate new password strength
+    if not re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,}$", data.new_password):
+        return {"status": "error", "message": "Password must be at least 8 characters long and include an uppercase letter, a lowercase letter, and a number."}
+
+    try:
+        # Get the current password hash from the database
+        user_res = supabase.table("users").select("password_hash").eq("id", user_id).single().execute()
+        
+        # Verify the old password is correct
+        if not verify_password(data.current_password, user_res.data["password_hash"]):
+            return {"status": "error", "message": "Incorrect current password."}
+            
+        # Hash and save the new password
+        new_hash = get_password_hash(data.new_password)
+        supabase.table("users").update({"password_hash": new_hash}).eq("id", user_id).execute()
+        
+        return {"status": "success", "message": "Password updated successfully!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    
+# --- ADMIN ENDPOINTS ---
+
+@app.get("/api/admin/users")
+def get_all_users(user_id: str = Depends(get_current_user)):
+    try:
+        # 1. SECURITY CHECK: Verify this user is actually an admin
+        admin_check = supabase.table("users").select("role").eq("id", user_id).single().execute()
+        if admin_check.data.get("role") != "admin":
+            return {"status": "error", "message": "Unauthorized. Admin access required."}
+            
+        # 2. Fetch all users (excluding their passwords for safety!)
+        response = supabase.table("users").select("id, full_name, username, email, business_name, role, created_at").order("created_at", desc=True).execute()
+        return {"status": "success", "data": response.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.delete("/api/admin/users/{target_user_id}")
+def delete_user(target_user_id: str, user_id: str = Depends(get_current_user)):
+    try:
+        # 1. SECURITY CHECK: Verify this user is an admin
+        admin_check = supabase.table("users").select("role").eq("id", user_id).single().execute()
+        if admin_check.data.get("role") != "admin":
+            return {"status": "error", "message": "Unauthorized. Admin access required."}
+            
+        # 2. Prevent the admin from accidentally deleting themselves!
+        if target_user_id == user_id:
+            return {"status": "error", "message": "You cannot delete your own admin account."}
+            
+        # 3. Delete the user (Because we set ON DELETE CASCADE in SQL, 
+        # this will automatically delete all their items and transactions too!)
+        supabase.table("users").delete().eq("id", target_user_id).execute()
+        return {"status": "success", "message": "User and all associated data deleted."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
