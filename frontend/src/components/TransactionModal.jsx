@@ -11,7 +11,14 @@ export default function TransactionModal({ isOpen, onClose, onSave, selectedDate
   // Fetch items and pre-fill data if editing
   useEffect(() => {
     if (isOpen) {
-      fetch('http://127.0.0.1:8000/api/inventory')
+      const token = localStorage.getItem('token'); // <-- 1. Get the token!
+      
+      // 2. Add the token to the headers and use the proper VITE_API_URL
+      fetch(`${import.meta.env.VITE_API_URL}/api/inventory`, {
+        headers: {
+          'Authorization': `Bearer ${token}` 
+        }
+      })
         .then(res => res.json())
         .then(result => {
           if (result.status === 'success') {
@@ -104,9 +111,6 @@ export default function TransactionModal({ isOpen, onClose, onSave, selectedDate
               </p>
             )}
           </div>
-
-
-         {/* src/components/TransactionModal.jsx (Update the Quantity input and Button inside the form) */}
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Quantity Sold</label>
