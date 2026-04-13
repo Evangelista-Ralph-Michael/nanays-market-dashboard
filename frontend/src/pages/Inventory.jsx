@@ -11,13 +11,13 @@ export default function Inventory() {
   const [searchTerm, setSearchTerm] = useState(''); // NEW: Search state
 
   // 1. Update the GET fetch
-  const fetchInventory = async () => {
+ const fetchInventory = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem('token'); // Get token from browser
+      const token = localStorage.getItem('token'); 
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/inventory`, {
         headers: {
-          'Authorization': `Bearer ${token}` // Send the VIP pass!
+          'Authorization': `Bearer ${token}` 
         }
       });
       const result = await response.json();
@@ -28,6 +28,12 @@ export default function Inventory() {
       setIsLoading(false);
     }
   };
+
+  // ---> ADD THIS MISSING BLOCK RIGHT HERE <---
+  useEffect(() => { 
+    fetchInventory(); 
+  }, []);
+  // ------------------------------------------
 
   // NEW: Filter items based on search bar
   const filteredItems = items.filter(item => 
