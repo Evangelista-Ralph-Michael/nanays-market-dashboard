@@ -124,13 +124,33 @@ class ItemCreate(BaseModel):
     capital: float
     selling_price: float
 
+# backend/main.py
+
 @app.post("/api/inventory")
-def create_item(item: dict, user_id: str = Depends(get_current_user)): # <-- 1. Require Token
+def create_item(item: dict, user_id: str = Depends(get_current_user)): 
     try:
-        # 2. Attach the user_id to the new item before saving
-        item["user_id"] = user_id 
-        response = supabase.table("items").insert(item).execute()
-        return {"status": "success", "data": response.data}
+        # 1. Search to see if this user already has an item with this exact name (case-insensitive)
+        existing = supabase.table("items").select("*").eq("user_id", user_id).ilike("item_name", item["item_name"]).execute()
+        
+        if len(existing.data) > 0:
+            # 2. SMART RESTOCK: The item exists! Let's combine them instead of throwing an error.
+            old_item = existing.data[0]
+            new_qty = old_item["quantity"] + item["quantity"]
+            
+            # Update the old item with the new quantity and any new prices you typed
+            response = supabase.table("items").update({
+                "quantity": new_qty,
+                "capital": item["capital"],
+                "selling_price": item["selling_price"]
+            }).eq("id", old_item["id"]).execute()
+            
+            return {"status": "success", "data": response.data}
+        else:
+            # 3. NORMAL ADD: The item doesn't exist yet, so we create a brand new row.
+            item["user_id"] = user_id 
+            response = supabase.table("items").insert(item).execute()
+            return {"status": "success", "data": response.data}
+            
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
