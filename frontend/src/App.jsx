@@ -1,6 +1,6 @@
 // src/App.jsx
 import { useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Menu } from 'lucide-react'; // <-- Imported the Hamburger Menu icon
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -22,12 +22,14 @@ const ProtectedRoute = ({ children }) => {
 
 const DashboardLayout = ({ children }) => {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // <-- Added state for mobile menu
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
+  const navigate = useNavigate(); // <-- ADD THIS LINE
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    window.location.href = '/login';
+    navigate('/login'); // <-- CHANGE THIS LINE (Smooth React routing!)
   };
 
   return (
