@@ -1,6 +1,7 @@
 // src/pages/AdminDashboard.jsx
 import { useState, useEffect } from 'react';
 import { ShieldAlert, Trash2, Loader2, Users } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export default function AdminDashboard() {
   const [users, setUsers] = useState([]);
@@ -36,24 +37,25 @@ export default function AdminDashboard() {
   }, []);
 
   const handleDeleteUser = async (targetUserId, businessName) => {
-    if (window.confirm(`CRITICAL WARNING: Are you sure you want to delete the business "${businessName}"? This will permanently erase ALL their items and transactions. This cannot be undone.`)) {
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/users/${targetUserId}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const result = await response.json();
-        
-        if (result.status === 'success') {
-          fetchUsers(); // Refresh the list
-        } else {
-          alert(`Error: ${result.message}`);
-        }
-      } catch (err) {
-        alert("Failed to delete user.");
-      }
-    }
+    // You can even make the confirm dialog a beautiful toast!
+    toast((t) => (
+      <div className="flex flex-col gap-2">
+        <span className="font-bold text-gray-800">Delete "{businessName}"?</span>
+        <span className="text-sm text-gray-500">This cannot be undone.</span>
+        <div className="flex gap-2 mt-2">
+          <button 
+            onClick={() => {
+              toast.dismiss(t.id);
+              executeDelete(targetUserId); // Your actual fetch delete logic
+            }} 
+            className="bg-red-500 text-white px-3 py-1 rounded font-bold text-sm"
+          >
+            Yes, Delete
+          </button>
+          <button onClick={() => toast.dismiss(t.id)} className="bg-gray-200 px-3 py-1 rounded font-bold text-sm">Cancel</button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   };
 
   if (isLoading) {

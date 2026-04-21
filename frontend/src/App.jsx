@@ -11,6 +11,8 @@ import Finances from './pages/Finances';
 import Settings from './pages/Settings';
 import Sidebar from './components/Sidebar';
 import AdminDashboard from './pages/AdminDashboard';
+import { Toaster } from 'react-hot-toast';
+
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -81,6 +83,8 @@ const DashboardLayout = ({ children }) => {
 export default function App() {
   return (
     <BrowserRouter>
+    <Toaster position="top-center" reverseOrder={false} />
+
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />

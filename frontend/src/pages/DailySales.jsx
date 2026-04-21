@@ -1,7 +1,10 @@
 // src/pages/DailySales.jsx
-import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Loader2, Edit, Trash2, Search } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Plus, Loader2, Edit, Trash2, Search, ShoppingCart, Download, Printer } from 'lucide-react';
+import toast from 'react-hot-toast';
 import TransactionModal from '../components/TransactionModal';
+import { useReactToPrint } from 'react-to-print';
+import Receipt from '../components/Receipt';
 
 export default function DailySales() {
   const [transactions, setTransactions] = useState([]);
@@ -29,10 +32,10 @@ export default function DailySales() {
   const fetchTransactions = async () => {
     setIsLoading(true);
     try {
-      const token = localStorage.getItem('token'); // <-- Get Token
+      const token = localStorage.getItem('token'); 
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/transactions?date=${selectedDate}`, {
         headers: {
-          'Authorization': `Bearer ${token}` // <-- Send Token
+          'Authorization': `Bearer ${token}` 
         }
       });
       const result = await response.json();
@@ -53,14 +56,14 @@ export default function DailySales() {
   const handleSaveTransaction = async (data, idToUpdate) => {
     const url = idToUpdate ? `${import.meta.env.VITE_API_URL}/api/transactions/${idToUpdate}` : `${import.meta.env.VITE_API_URL}/api/transactions`;
     const method = idToUpdate ? 'PUT' : 'POST';
-    const token = localStorage.getItem('token'); // <-- Get Token
+    const token = localStorage.getItem('token'); 
 
     try {
       const response = await fetch(url, {
         method: method,
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // <-- Send Token
+          'Authorization': `Bearer ${token}` 
         },
         body: JSON.stringify(data),
       });
@@ -78,17 +81,64 @@ export default function DailySales() {
 
   const handleDelete = async (id) => {
     if (window.confirm("Delete this transaction? The sold items will be returned to inventory.")) {
-      const token = localStorage.getItem('token'); // <-- Get Token
+      const token = localStorage.getItem('token'); 
       await fetch(`${import.meta.env.VITE_API_URL}/api/transactions/${id}`, { 
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}` // <-- Send Token
+          'Authorization': `Bearer ${token}` 
         }
       });
       fetchTransactions();
     }
   };
 
+  // Export to CSV Function
+  const handleExport = () => {
+    if (filteredTransactions.length === 0) {
+      toast.error("No transactions to export for this date!");
+      return;
+    }
+
+    const csvData = filteredTransactions.map(tx => ({
+      "Date": tx.transaction_date,
+      "Item Name": tx.items?.item_name || 'Unknown',
+      "Quantity Sold": tx.quantity_sold,
+      "Revenue (PHP)": tx.total_amount
+    }));
+
+    const headers = Object.keys(csvData[0]).join(',');
+    const rows = csvData.map(obj => Object.values(obj).map(val => `"${val}"`).join(',')).join('\n');
+    
+    const csvString = `${headers}\n${rows}`;
+    const blob = new Blob([csvString], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Daily_Sales_${selectedDate}.csv`;
+    a.click();
+    
+    toast.success("Sales exported successfully!");
+  };
+
+  // --- PRINT LOGIC ---
+  const [txnToPrint, setTxnToPrint] = useState(null);
+  const receiptRef = useRef();
+
+  const handlePrintReceipt = useReactToPrint({
+    content: () => receiptRef.current,
+    documentTitle: 'Receipt',
+    onAfterPrint: () => setTxnToPrint(null) 
+  });
+
+  // NEW: A direct click handler so the browser doesn't block the print dialog!
+  const handlePrintClick = (tx) => {
+    setTxnToPrint(tx);
+    // Give React a tiny 50ms pause to load the data into the receipt before printing
+    setTimeout(() => {
+      handlePrintReceipt();
+    }, 50);
+  };
+  // -------------------
   const totalItemsSold = transactions.reduce((sum, tx) => sum + tx.quantity_sold, 0);
   const totalRevenue = transactions.reduce((sum, tx) => sum + Number(tx.total_amount), 0);
 
@@ -98,12 +148,20 @@ export default function DailySales() {
       {/* Responsive Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Daily Sales</h1>
-        <button 
-          onClick={() => { setTxnToEdit(null); setIsModalOpen(true); }}
-          className="flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white px-5 py-2.5 rounded-xl font-medium shadow-sm w-full sm:w-auto"
-        >
-          <Plus size={20} /> Log New Sale
-        </button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <button 
+            onClick={handleExport}
+            className="flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 px-5 py-2.5 rounded-xl font-medium shadow-sm w-full sm:w-auto transition-colors"
+          >
+            <Download size={20} /> Export CSV
+          </button>
+          <button 
+            onClick={() => { setTxnToEdit(null); setIsModalOpen(true); }}
+            className="flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white px-5 py-2.5 rounded-xl font-medium shadow-sm w-full sm:w-auto transition-colors"
+          >
+            <Plus size={20} /> Log New Sale
+          </button>
+        </div>
       </div>
 
       {/* Calendar */}
@@ -186,9 +244,48 @@ export default function DailySales() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan="4" className="text-center py-10"><Loader2 className="animate-spin mx-auto text-primaryBlue" /></td></tr>
+                // Generate 4 fake rows for the sales table
+                Array.from({ length: 4 }).map((_, index) => (
+                  <tr key={index} className="border-b border-gray-100 animate-pulse">
+                    <td className="py-4 px-4">
+                      <div className="h-5 bg-gray-200 rounded-md w-8"></div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="h-5 bg-gray-200 rounded-md w-48"></div>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <div className="h-5 bg-gray-200 rounded-md w-24 ml-auto"></div>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <div className="h-8 w-8 bg-gray-200 rounded-lg"></div>
+                        <div className="h-8 w-8 bg-gray-200 rounded-lg"></div>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               ) : filteredTransactions.length === 0 ? (
-                <tr><td colSpan="4" className="text-center py-8 text-gray-500 text-sm">No transactions found.</td></tr>
+                <tr>
+                  <td colSpan="4" className="py-16">
+                    <div className="flex flex-col items-center justify-center text-center">
+                      <div className="bg-gray-50 p-6 rounded-full mb-4 border-2 border-dashed border-gray-200">
+                        <ShoppingCart size={48} className="text-gray-400" />
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-800 mb-2">No sales for this date</h3>
+                      <p className="text-gray-500 mb-6 max-w-sm">
+                        {searchTerm ? "No transactions match your search." : "You haven't recorded any sales for this day yet. Ready to make some money?"}
+                      </p>
+                      {!searchTerm && (
+                        <button 
+                          onClick={() => { setTxnToEdit(null); setIsModalOpen(true); }}
+                          className="flex items-center gap-2 bg-green-500 text-white px-6 py-3 rounded-xl font-bold shadow-sm hover:bg-green-600 transition-colors"
+                        >
+                          <Plus size={20} /> Log a Sale
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
               ) : (
                 filteredTransactions.map((tx) => (
                   <tr key={tx.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -196,8 +293,16 @@ export default function DailySales() {
                     <td className="py-3 sm:py-4 px-2 sm:px-4 font-medium">{tx.items?.item_name || 'Unknown'}</td>
                     <td className="py-3 sm:py-4 px-2 sm:px-4 font-bold text-green-600 text-right whitespace-nowrap">PHP {Number(tx.total_amount).toFixed(2)}</td>
                     <td className="py-3 sm:py-4 px-2 sm:px-4 text-right space-x-1 sm:space-x-2 whitespace-nowrap">
-                      <button onClick={() => { setTxnToEdit(tx); setIsModalOpen(true); }} className="p-1.5 sm:p-2 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit size={16} /></button>
-                      <button onClick={() => handleDelete(tx.id)} className="p-1.5 sm:p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
+                      {/* NEW PRINT BUTTON */}
+                      <button onClick={() => handlePrintClick(tx)} className="p-1.5 sm:p-2 text-gray-500 hover:bg-gray-200 hover:text-gray-800 rounded-lg transition-colors" title="Print Receipt">
+                        <Printer size={16} />
+                      </button>
+                      <button onClick={() => { setTxnToEdit(tx); setIsModalOpen(true); }} className="p-1.5 sm:p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Sale">
+                        <Edit size={16} />
+                      </button>
+                      <button onClick={() => handleDelete(tx.id)} className="p-1.5 sm:p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete Sale">
+                        <Trash2 size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -214,6 +319,13 @@ export default function DailySales() {
         selectedDate={selectedDate}
         txnToEdit={txnToEdit}
       />
+
+     {/* HIDDEN RECEIPT COMPONENT FOR PRINTING */}
+      {/* We push it way off-screen instead of using display:none so it can still be read by the printer! */}
+      <div className="absolute left-[-9999px] top-[-9999px]">
+        <Receipt ref={receiptRef} transaction={txnToPrint} />
+      </div>
+
     </div>
   );
 }

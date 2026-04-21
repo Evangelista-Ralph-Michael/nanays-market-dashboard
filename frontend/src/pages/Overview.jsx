@@ -1,209 +1,290 @@
 // src/pages/Overview.jsx
 import { useState, useEffect } from 'react';
-import { CalendarDays, AlertCircle, TrendingUp, Loader2, Filter } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { TrendingUp, Package, ShoppingCart, DollarSign, Loader2, AlertCircle, Filter } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Overview() {
-  const [analytics, setAnalytics] = useState(null);
+  const navigate = useNavigate();
+  const [transactions, setTransactions] = useState([]);
+  const [inventory, setInventory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  
-  const [selectedYear, setSelectedYear] = useState('2026');
-  const [selectedMonth, setSelectedMonth] = useState('All');
+
+  // Date Picker States
+  const currentYear = new Date().getFullYear().toString();
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [selectedMonth, setSelectedMonth] = useState("All");
 
   useEffect(() => {
-    const fetchAnalytics = async () => {
+    const fetchData = async () => {
       setIsLoading(true);
+      const token = localStorage.getItem('token');
       try {
-        const token = localStorage.getItem('token'); // <-- Get Token
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/analytics?year=${selectedYear}&month=${selectedMonth}`, {
-          headers: {
-            'Authorization': `Bearer ${token}` // <-- Send Token
-          }
-        });
-        const result = await response.json();
-        if (result.status === 'success') {
-          setAnalytics(result.data);
-        }
+        const [txRes, invRes] = await Promise.all([
+          fetch(`${import.meta.env.VITE_API_URL}/api/transactions`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`${import.meta.env.VITE_API_URL}/api/inventory`, { headers: { 'Authorization': `Bearer ${token}` } })
+        ]);
+        
+        const txData = await txRes.json();
+        const invData = await invRes.json();
+
+        if (txData.status === 'success') setTransactions(txData.data);
+        if (invData.status === 'success') setInventory(invData.data);
       } catch (error) {
-        console.error("Failed to fetch analytics:", error);
+        console.error("Error fetching dashboard data:", error);
       } finally {
         setIsLoading(false);
       }
     };
+    fetchData();
+  }, []);
 
-    fetchAnalytics();
-  }, [selectedYear, selectedMonth]); 
+  // --- FILTER DATA BASED ON DATE PICKER ---
+  const filteredTransactions = transactions.filter(tx => {
+    const date = new Date(tx.transaction_date);
+    const txYear = date.getFullYear().toString();
+    const txMonth = (date.getMonth() + 1).toString();
+    
+    if (selectedYear !== "All" && txYear !== selectedYear) return false;
+    if (selectedMonth !== "All" && txMonth !== selectedMonth) return false;
+    return true;
+  });
 
-  const formatMoney = (amount) => {
-    return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount || 0);
-  };
+  // --- TREND ANALYSIS (Summary Stats) ---
+  const totalRevenue = filteredTransactions.reduce((sum, tx) => sum + Number(tx.total_amount), 0);
+  const totalItemsSold = filteredTransactions.reduce((sum, tx) => sum + tx.quantity_sold, 0);
+  
+  // Calculate estimated Gross Profit (Revenue - Capital)
+  const grossProfit = filteredTransactions.reduce((sum, tx) => {
+    const item = inventory.find(i => i.id === tx.item_id);
+    const capitalCost = item ? (item.capital * tx.quantity_sold) : 0;
+    return sum + (Number(tx.total_amount) - capitalCost);
+  }, 0);
 
-  if (isLoading && !analytics) {
-    return <div className="flex items-center justify-center h-[80vh]"><Loader2 className="animate-spin text-primaryBlue w-12 h-12" /></div>;
+  // --- DYNAMIC CHART DATA (Adaptive based on Date Picker) ---
+  const dynamicChartData = [];
+  const yearForChart = selectedYear === "All" ? currentYear : selectedYear;
+
+  if (selectedMonth !== "All") {
+    // 1. ZOOM IN: Show every day of the selected month
+    const daysInMonth = new Date(yearForChart, selectedMonth, 0).getDate();
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${yearForChart}-${selectedMonth.padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+      const dailyRev = transactions
+        .filter(tx => tx.transaction_date === dateStr)
+        .reduce((sum, tx) => sum + Number(tx.total_amount), 0);
+      
+      dynamicChartData.push({ 
+        name: day.toString(), 
+        revenue: dailyRev 
+      });
+    }
+  } else {
+    // 2. ZOOM OUT: Show 12 months of the selected year
+    const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    monthLabels.forEach((month, index) => {
+      const monthNum = (index + 1).toString();
+      const monthlyRev = transactions
+        .filter(tx => {
+          const d = new Date(tx.transaction_date);
+          return d.getFullYear().toString() === yearForChart && (d.getMonth() + 1).toString() === monthNum;
+        })
+        .reduce((sum, tx) => sum + Number(tx.total_amount), 0);
+        
+      dynamicChartData.push({ name: month, revenue: monthlyRev });
+    });
+  }
+
+  // --- CHART DATA: TOP ITEMS ---
+  const itemSales = {};
+  filteredTransactions.forEach(tx => {
+    const name = tx.items?.item_name || 'Unknown';
+    itemSales[name] = (itemSales[name] || 0) + tx.quantity_sold;
+  });
+  const topItemsData = Object.keys(itemSales)
+    .map(name => ({ name, value: itemSales[name] }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 4); 
+  const PIE_COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6'];
+
+  // --- STOCK ALERTS (Low Inventory) ---
+  const lowStockItems = inventory.filter(item => item.quantity <= 10).sort((a, b) => a.quantity - b.quantity);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[80vh]">
+        <Loader2 className="animate-spin text-primaryBlue w-12 h-12" />
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6 md:space-y-8 max-w-7xl mx-auto px-2 sm:px-0">
+    <div className="space-y-6 md:space-y-8 max-w-7xl mx-auto px-2 sm:px-0 pb-10">
       
-      {/* Header & Dynamic Date Picker */}
+      {/* HEADER & DATE PICKER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Overview</h1>
+        <div className="flex items-center gap-3">
+          <TrendingUp className="text-primaryBlue" size={32} />
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Dashboard</h1>
+        </div>
         
-        <div className="flex flex-wrap items-center gap-3 md:gap-4">
-          <div className="flex items-center gap-2 md:gap-3 border-2 border-gray-200 bg-white rounded-xl px-3 py-2 shadow-sm w-fit">
-            <CalendarDays className="text-gray-500" size={18} />
-            <span className="font-bold text-gray-800 hidden sm:inline">Year</span>
-            <select 
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="text-primaryBlue outline-none bg-transparent font-bold cursor-pointer text-sm md:text-base"
-            >
-              <option value="2026">2026</option>
-              <option value="2025">2025</option>
-              <option value="2024">2024</option>
-            </select>
-          </div>
+        <div className="flex items-center gap-3 bg-white p-2 rounded-xl shadow-sm border border-gray-100">
+          <Filter size={18} className="text-gray-400 ml-2" />
+          <select 
+            value={selectedYear} 
+            onChange={(e) => setSelectedYear(e.target.value)} 
+            className="bg-transparent font-medium text-gray-700 outline-none cursor-pointer"
+          >
+            <option value="All">All Years</option>
+            <option value={currentYear}>{currentYear}</option>
+            <option value={(parseInt(currentYear) - 1).toString()}>{parseInt(currentYear) - 1}</option>
+          </select>
+          <div className="w-px h-6 bg-gray-200"></div>
+          <select 
+            value={selectedMonth} 
+            onChange={(e) => setSelectedMonth(e.target.value)} 
+            className="bg-transparent font-medium text-gray-700 outline-none cursor-pointer pr-2"
+          >
+            <option value="All">All Months</option>
+            {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((m, i) => (
+              <option key={m} value={(i + 1).toString()}>{m}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-          <div className="flex items-center gap-2 md:gap-3 border-2 border-primaryBlue bg-white rounded-xl px-3 py-2 shadow-sm w-fit">
-            <Filter className="text-primaryBlue" size={18} />
-            <span className="font-bold text-gray-800 hidden sm:inline">Month</span>
-            <select 
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="text-primaryBlue outline-none bg-transparent font-bold cursor-pointer text-sm md:text-base"
-            >
-              <option value="All">All Year</option>
-              <option value="01">January</option>
-              <option value="02">February</option>
-              <option value="03">March</option>
-              <option value="04">April</option>
-              <option value="05">May</option>
-              <option value="06">June</option>
-              <option value="07">July</option>
-              <option value="08">August</option>
-              <option value="09">September</option>
-              <option value="10">October</option>
-              <option value="11">November</option>
-              <option value="12">December</option>
-            </select>
+      {/* TREND ANALYSIS CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+          <div className="bg-green-50 p-4 rounded-xl text-green-600"><DollarSign size={28} /></div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Filtered Revenue</p>
+            <h3 className="text-2xl font-bold text-gray-900">₱{totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+          <div className="bg-blue-50 p-4 rounded-xl text-primaryBlue"><ShoppingCart size={28} /></div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Filtered Items Sold</p>
+            <h3 className="text-2xl font-bold text-gray-900">{totalItemsSold} Units</h3>
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
+          <div className="bg-orange-50 p-4 rounded-xl text-orange-500"><TrendingUp size={28} /></div>
+          <div>
+            <p className="text-sm font-semibold text-gray-500">Est. Gross Profit</p>
+            <h3 className="text-2xl font-bold text-gray-900">₱{grossProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
           </div>
         </div>
       </div>
 
-      {/* Top Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-        <div className="bg-primaryBlue text-white rounded-2xl p-6 md:p-8 shadow-md flex flex-col items-center justify-center text-center">
-          <h2 className="text-lg md:text-xl font-medium mb-2 opacity-90">Gross Profit</h2>
-          <p className="text-4xl md:text-5xl font-bold tracking-tight">{formatMoney(analytics?.gross_profit)}</p>
-        </div>
-
-        <div className="bg-primaryBlue text-white rounded-2xl p-6 md:p-8 shadow-md flex flex-col items-center justify-center text-center">
-          <h2 className="text-lg md:text-xl font-medium mb-2 opacity-90">Net Profit</h2>
-          <p className="text-4xl md:text-5xl font-bold tracking-tight">{formatMoney(analytics?.net_profit)}</p>
-        </div>
-      </div>
-
-      {/* Lower Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Stock Alerts Panel */}
-        <div className="lg:col-span-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-6">
-          <div className="flex items-center gap-2 mb-4 border-b pb-4">
-            <AlertCircle className="text-red-500" size={20} />
-            <h2 className="text-lg md:text-xl font-bold text-gray-800">Stock alert</h2>
-          </div>
-          
-          <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
-            <div className="grid grid-cols-3 text-xs md:text-sm font-semibold text-gray-500 px-2">
-              <span>Item Name</span>
-              <span className="text-center">Stock</span>
-              <span className="text-right">Notes</span>
-            </div>
-            
-            {analytics?.stock_alerts.length === 0 ? (
-              <p className="text-center text-gray-500 py-4 font-medium text-sm">All stock is healthy! ✅</p>
-            ) : (
-              analytics?.stock_alerts.map((item, index) => (
-                <div key={index} className="grid grid-cols-3 items-center bg-gray-50 p-2 md:p-3 rounded-lg border border-gray-100 text-sm">
-                  <span className="font-medium text-gray-800 truncate pr-2">{item.item_name}</span>
-                  <span className="text-center font-bold text-red-500">{item.quantity}</span>
-                  <span className={`text-right font-medium text-xs md:text-sm ${item.quantity === 0 ? 'text-red-600' : 'text-orange-500'}`}>
-                    {item.quantity === 0 ? 'Out of Stock' : 'Low stock'}
-                  </span>
-                </div>
-              ))
-            )}
+        {/* BAR CHART: DYNAMIC TREND */}
+        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <h3 className="text-lg font-bold text-gray-800 mb-6">
+            {selectedMonth !== "All" 
+              ? `Daily Revenue: ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][parseInt(selectedMonth) - 1]} ${yearForChart}` 
+              : `Monthly Revenue Trend (${yearForChart})`}
+          </h3>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dynamicChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#6B7280', fontSize: 10 }} 
+                  dy={10} 
+                  interval={selectedMonth !== "All" ? 2 : 0} 
+                />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
+                <Tooltip 
+                  cursor={{ fill: '#F3F4F6' }} 
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} 
+                  formatter={(value) => [`₱${value.toFixed(2)}`, 'Revenue']} 
+                />
+                <Bar 
+                  dataKey="revenue" 
+                  fill="#10B981" 
+                  radius={[4, 4, 0, 0]} 
+                  barSize={selectedMonth !== "All" ? 15 : 30} 
+                />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
-
-        {/* Trend Analysis Panel */}
-        <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-6 flex flex-col">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 border-b pb-4 gap-2">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="text-green-500" size={20} />
-              <h2 className="text-lg md:text-xl font-bold text-gray-800 uppercase tracking-wide">
-                Trend Analysis {selectedMonth !== 'All' && `(${selectedYear}-${selectedMonth})`}
-              </h2>
-            </div>
-            <p className="text-sm md:text-base text-gray-500 font-medium">
-              Total Revenue: <span className="text-green-600 font-bold">{formatMoney(analytics?.total_revenue)}</span>
-            </p>
-          </div>
-          
-          <div className="flex-1 w-full min-h-[250px] md:min-h-[300px]">
-            {analytics?.chart_data && analytics.chart_data.length > 0 ? (
+        
+        {/* PIE CHART: TOP ITEMS */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <h3 className="text-lg font-bold text-gray-800 mb-6">Top Selling Items</h3>
+          {topItemsData.length > 0 ? (
+            <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={analytics.chart_data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                  <XAxis 
-                    dataKey="date" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#6B7280', fontSize: 12 }} 
-                    dy={10}
-                    tickFormatter={(tick) => {
-                      if (selectedMonth === 'All') return tick;
-                      const date = new Date(tick);
-                      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                    }}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#6B7280', fontSize: 12 }}
-                    tickFormatter={(tick) => `₱${tick}`}
-                    width={60}
-                  />
+                <PieChart>
+                  <Pie data={topItemsData} cx="50%" cy="45%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                    {topItemsData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
                   <Tooltip 
-                    formatter={(value) => [`₱${value.toFixed(2)}`, 'Revenue']}
-                    labelFormatter={(label) => {
-                      if (selectedMonth === 'All') return `${label} ${selectedYear}`;
-                      return new Date(label).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                    }}
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    formatter={(value) => [`${value} Units Sold`, 'Quantity']} 
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} 
                   />
-                  <Area 
-                    type="monotone" 
-                    dataKey="revenue" 
-                    stroke="#10B981" 
-                    strokeWidth={3}
-                    fillOpacity={1} 
-                    fill="url(#colorRevenue)" 
-                  />
-                </AreaChart>
+                  <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', color: '#4B5563' }}/>
+                </PieChart>
               </ResponsiveContainer>
-            ) : (
-               <div className="flex items-center justify-center h-full bg-gray-50 rounded-xl border border-dashed border-gray-300">
-                 <p className="text-gray-500 font-medium">Log some sales to see your revenue trends!</p>
-               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-72 text-center text-gray-500">
+              <Package size={48} className="text-gray-300 mb-3" />
+              <p>No sales data yet.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* STOCK ALERTS (CLICKABLE!) */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-6 border-b border-gray-100 flex items-center gap-2">
+          <AlertCircle className="text-red-500" size={24} />
+          <h2 className="text-lg font-bold text-gray-800">Low Stock Alerts</h2>
+          <span className="ml-auto bg-red-50 text-red-600 py-1 px-3 rounded-full text-sm font-bold">{lowStockItems.length} Items</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="py-3 px-6 text-xs font-semibold text-gray-500 uppercase">Item Name</th>
+                <th className="py-3 px-6 text-xs font-semibold text-gray-500 uppercase">Current Stock</th>
+                <th className="py-3 px-6 text-xs font-semibold text-gray-500 uppercase text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lowStockItems.length === 0 ? (
+                <tr><td colSpan="3" className="text-center py-8 text-gray-500">All items are sufficiently stocked!</td></tr>
+              ) : (
+                lowStockItems.map((item) => (
+                  <tr 
+                    key={item.id} 
+                    onClick={() => navigate('/inventory', { state: { editItem: item } })}
+                    className="border-b border-gray-100 hover:bg-red-50 cursor-pointer transition-colors group"
+                  >
+                    <td className="py-4 px-6 font-bold text-gray-800 group-hover:text-red-600">{item.item_name}</td>
+                    <td className="py-4 px-6">
+                      <span className={`font-bold px-2 py-1 rounded ${item.quantity === 0 ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}`}>
+                        {item.quantity} Left
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-right text-sm font-medium text-blue-500 group-hover:text-blue-700">
+                      Click to Restock &rarr;
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
