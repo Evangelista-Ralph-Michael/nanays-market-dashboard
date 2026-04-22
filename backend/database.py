@@ -15,3 +15,4 @@ if not url or not key:
 
 # Initialize and export the Supabase client
 supabase: Client = create_client(url, key)
+

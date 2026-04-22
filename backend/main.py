@@ -124,6 +124,11 @@ class ItemCreate(BaseModel):
     capital: float
     selling_price: float
 
+class ExpenseCreate(BaseModel):
+    expense_date: str
+    category: str
+    description: str = ""
+    amount: float
 # backend/main.py
 
 @app.post("/api/inventory")
@@ -414,6 +419,42 @@ def get_finances(year: str = "2026", month: str = "All", user_id: str = Depends(
                 "chart_data": list(chart_dict.values())
             }
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    
+
+# --- EXPENSE ENDPOINTS ---
+
+@app.get("/api/expenses")
+def get_expenses(user_id: str = Depends(get_current_user)):
+    try:
+        # Fetch only the logged-in user's expenses, sorted by date
+        response = supabase.table("expenses").select("*").eq("user_id", user_id).order("expense_date", desc=True).execute()
+        return {"status": "success", "data": response.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/expenses")
+def add_expense(expense: ExpenseCreate, user_id: str = Depends(get_current_user)):
+    try:
+        new_expense = {
+            "user_id": user_id,
+            "expense_date": expense.expense_date,
+            "category": expense.category,
+            "description": expense.description,
+            "amount": expense.amount
+        }
+        response = supabase.table("expenses").insert(new_expense).execute()
+        return {"status": "success", "data": response.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.delete("/api/expenses/{expense_id}")
+def delete_expense(expense_id: str, user_id: str = Depends(get_current_user)):
+    try:
+        # Delete the expense (ensuring it belongs to this user!)
+        supabase.table("expenses").delete().eq("id", expense_id).eq("user_id", user_id).execute()
+        return {"status": "success", "message": "Expense deleted"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
     

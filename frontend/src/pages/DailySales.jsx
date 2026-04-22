@@ -1,10 +1,13 @@
 // src/pages/DailySales.jsx
 import { useState, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom'; // <-- ADD THIS BACK
 import { ChevronLeft, ChevronRight, Plus, Loader2, Edit, Trash2, Search, ShoppingCart, Download, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import TransactionModal from '../components/TransactionModal';
-import { useReactToPrint } from 'react-to-print';
 import Receipt from '../components/Receipt';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
+
 
 export default function DailySales() {
   const [transactions, setTransactions] = useState([]);
@@ -120,25 +123,63 @@ export default function DailySales() {
     toast.success("Sales exported successfully!");
   };
 
-  // --- PRINT LOGIC ---
+ // --- PDF RECEIPT LOGIC ---
+  const receiptRef = useRef(null);
   const [txnToPrint, setTxnToPrint] = useState(null);
-  const receiptRef = useRef();
 
-  const handlePrintReceipt = useReactToPrint({
-    content: () => receiptRef.current,
-    documentTitle: 'Receipt',
-    onAfterPrint: () => setTxnToPrint(null) 
-  });
+  const handleDownloadReceipt = (tx) => {
+    // 1. Force React to instantly prepare the receipt data
+    flushSync(() => {
+      setTxnToPrint(tx);
+    });
 
-  // NEW: A direct click handler so the browser doesn't block the print dialog!
-  const handlePrintClick = (tx) => {
-    setTxnToPrint(tx);
-    // Give React a tiny 50ms pause to load the data into the receipt before printing
-    setTimeout(() => {
-      handlePrintReceipt();
-    }, 50);
+    // 2. Give the browser 300ms to fully paint the fonts and layout
+    setTimeout(async () => {
+      const element = receiptRef.current;
+      if (!element) return;
+
+      try {
+        // Take a high-quality screenshot (opacity is 100%, so it works!)
+        const canvas = await html2canvas(element, { 
+          scale: 2, 
+          backgroundColor: '#ffffff'
+        });
+        
+        // Safety check to prevent crashing if the canvas is empty
+        if (canvas.width === 0 || canvas.height === 0) {
+          throw new Error("The receipt container had 0 height.");
+        }
+
+        const imgData = canvas.toDataURL('image/png');
+
+        // Calculate the height proportionally to fit an 80mm thermal receipt width
+        const pdfWidth = 80; 
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+        // Create the PDF file
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: [pdfWidth, pdfHeight]
+        });
+
+        // Add the image and trigger the download
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`Receipt_${tx.items?.item_name || 'Sale'}.pdf`);
+        
+        toast.success("Receipt downloaded successfully!");
+      } catch (err) {
+        console.error("PDF Error:", err);
+        // This will print the EXACT error on your screen if it fails again
+        toast.error(`Error: ${err.message}`);
+      } finally {
+        setTxnToPrint(null); // Clean up
+      }
+    }, 300);
   };
   // -------------------
+
+
   const totalItemsSold = transactions.reduce((sum, tx) => sum + tx.quantity_sold, 0);
   const totalRevenue = transactions.reduce((sum, tx) => sum + Number(tx.total_amount), 0);
 
@@ -293,8 +334,8 @@ export default function DailySales() {
                     <td className="py-3 sm:py-4 px-2 sm:px-4 font-medium">{tx.items?.item_name || 'Unknown'}</td>
                     <td className="py-3 sm:py-4 px-2 sm:px-4 font-bold text-green-600 text-right whitespace-nowrap">PHP {Number(tx.total_amount).toFixed(2)}</td>
                     <td className="py-3 sm:py-4 px-2 sm:px-4 text-right space-x-1 sm:space-x-2 whitespace-nowrap">
-                      {/* NEW PRINT BUTTON */}
-                      <button onClick={() => handlePrintClick(tx)} className="p-1.5 sm:p-2 text-gray-500 hover:bg-gray-200 hover:text-gray-800 rounded-lg transition-colors" title="Print Receipt">
+                      {/* NEW PDF DOWNLOAD BUTTON */}
+                      <button onClick={() => handleDownloadReceipt(tx)} className="p-1.5 sm:p-2 text-gray-500 hover:bg-gray-200 hover:text-gray-800 rounded-lg transition-colors" title="Download Receipt PDF">
                         <Printer size={16} />
                       </button>
                       <button onClick={() => { setTxnToEdit(tx); setIsModalOpen(true); }} className="p-1.5 sm:p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Sale">
@@ -320,12 +361,13 @@ export default function DailySales() {
         txnToEdit={txnToEdit}
       />
 
-     {/* HIDDEN RECEIPT COMPONENT FOR PRINTING */}
-      {/* We push it way off-screen instead of using display:none so it can still be read by the printer! */}
-      <div className="absolute left-[-9999px] top-[-9999px]">
-        <Receipt ref={receiptRef} transaction={txnToPrint} />
+    {/* HIDDEN RECEIPT COMPONENT FOR PDF GENERATION */}
+      <div className="fixed top-0 left-0 -z-50 pointer-events-none">
+        {/* Swapped bg-white for bg-[#ffffff] */}
+        <div ref={receiptRef} className="bg-[#ffffff] w-[80mm]">
+          {txnToPrint && <Receipt transaction={txnToPrint} />}
+        </div>
       </div>
-
-    </div>
+      </div>
   );
 }

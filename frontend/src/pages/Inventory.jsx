@@ -122,12 +122,6 @@ const handleSave = async (data, id) => {
           >
             <Download size={20} /> Export CSV
           </button>
-          <button 
-            onClick={() => { setSelectedItem(null); setIsModalOpen(true); }}
-            className="flex items-center justify-center gap-2 bg-primaryBlue hover:bg-blue-600 text-white px-5 py-2.5 rounded-xl font-medium shadow-sm w-full sm:w-auto transition-colors"
-          >
-            <Plus size={20} /> Add New Item
-          </button>
         </div>
           
           <button 
