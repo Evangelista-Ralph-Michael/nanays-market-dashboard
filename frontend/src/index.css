@@ -6,3 +6,6 @@
   --color-primaryBlue: #4A90E2;
   --color-lightBg: #F3F4F6;
 }
+
+/* ADD THIS LINE to enable manual dark mode toggling */
+@custom-variant dark (&:where(.dark, .dark *));

@@ -10,19 +10,15 @@ export default function TransactionModal({ isOpen, onClose, onSave, selectedDate
   const [quantity, setQuantity] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   
-  // NEW: A state to keep the dropdown open when you click the search box
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // Fetch items and pre-fill data if editing
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true);
       const token = localStorage.getItem('token'); 
       
       fetch(`${import.meta.env.VITE_API_URL}/api/inventory`, {
-        headers: {
-          'Authorization': `Bearer ${token}` 
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       })
         .then(res => res.json())
         .then(result => {
@@ -37,7 +33,7 @@ export default function TransactionModal({ isOpen, onClose, onSave, selectedDate
               setSelectedItem(null);
               setQuantity(1);
               setSearchTerm('');
-              setIsDropdownOpen(false); // Reset dropdown
+              setIsDropdownOpen(false); 
             }
           }
         })
@@ -47,8 +43,7 @@ export default function TransactionModal({ isOpen, onClose, onSave, selectedDate
 
   if (!isOpen) return null;
 
-  // Filter items based on user search
- const filteredItems = items
+  const filteredItems = items
     .filter(item => item.item_name.toLowerCase().includes(searchTerm.toLowerCase()))
     .sort((a, b) => a.item_name.localeCompare(b.item_name));
     
@@ -70,20 +65,19 @@ export default function TransactionModal({ isOpen, onClose, onSave, selectedDate
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-8 w-full max-w-md shadow-xl">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 w-full max-w-md shadow-xl transition-colors">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold">{txnToEdit ? 'Edit Transaction' : 'Log New Sale'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">{txnToEdit ? 'Edit Transaction' : 'Log New Sale'}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={24} /></button>
         </div>
         
         <form onSubmit={handleSubmit} className="space-y-6">
           
-          {/* Custom Searchable Dropdown */}
           <div className="relative">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Search & Select Item</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search & Select Item</label>
             
            {isLoading ? (
-              <div className="flex items-center gap-2 text-primaryBlue p-3 border rounded-lg bg-gray-50 text-sm font-medium">
+              <div className="flex items-center gap-2 text-primaryBlue p-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900/50 text-sm font-medium transition-colors">
                 <Loader2 className="animate-spin" size={18} /> Loading inventory...
               </div>
             ) : (
@@ -99,11 +93,9 @@ export default function TransactionModal({ isOpen, onClose, onSave, selectedDate
                     setSelectedItem(null); 
                     setIsDropdownOpen(true);
                   }}
-                  // I added pr-10 here so text doesn't overlap the new X button
-                  className="w-full pl-10 pr-10 p-3 border rounded-lg outline-primaryBlue font-medium"
+                  className="w-full pl-10 pr-10 p-3 border border-gray-300 dark:border-gray-600 rounded-lg outline-primaryBlue font-medium bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
                 />
                 
-                {/* NEW: The 'X' Clear Button */}
                 {searchTerm && (
                   <button 
                     type="button" 
@@ -111,7 +103,6 @@ export default function TransactionModal({ isOpen, onClose, onSave, selectedDate
                       setSearchTerm('');
                       setSelectedItem(null);
                       setIsDropdownOpen(true);
-                      // Keep focus on the input after clearing
                       document.querySelector('input[placeholder="Click to see list or type to search..."]').focus();
                     }}
                     className="absolute right-3 top-3.5 text-gray-400 hover:text-red-500 transition-colors"
@@ -122,41 +113,39 @@ export default function TransactionModal({ isOpen, onClose, onSave, selectedDate
               </div>
             )}
             
-            {/* Show dropdown list if open AND no final item is selected */}
             {isDropdownOpen && !selectedItem && !isLoading && (
-              <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto transition-colors">
                 {filteredItems.length > 0 ? filteredItems.map(item => (
                   <div 
                     key={item.id} 
                     onClick={() => {
-                      if (item.quantity === 0) return; // Prevent clicking out of stock
+                      if (item.quantity === 0) return; 
                       setSelectedItem(item);
                       setSearchTerm(item.item_name);
-                      setIsDropdownOpen(false); // Close list
+                      setIsDropdownOpen(false); 
                     }}
-                    className={`p-3 border-b last:border-0 flex justify-between ${item.quantity === 0 ? 'bg-gray-100 cursor-not-allowed opacity-60' : 'hover:bg-gray-50 cursor-pointer'}`}
+                    className={`p-3 border-b border-gray-100 dark:border-gray-600 last:border-0 flex justify-between ${item.quantity === 0 ? 'bg-gray-100 dark:bg-gray-800 cursor-not-allowed opacity-60' : 'hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer'} text-gray-900 dark:text-white transition-colors`}
                   >
                     <span className="font-medium">{item.item_name}</span>
-                    <span className={`text-sm ${item.quantity === 0 ? 'text-red-500 font-bold' : 'text-gray-500'}`}>
+                    <span className={`text-sm ${item.quantity === 0 ? 'text-red-500 dark:text-red-400 font-bold' : 'text-gray-500 dark:text-gray-300'}`}>
                       {item.quantity === 0 ? 'OUT OF STOCK' : `Stock: ${item.quantity} | ₱${item.selling_price}`}
                     </span>
                   </div>
                 )) : (
-                  <div className="p-3 text-sm text-gray-500">No items found.</div>
+                  <div className="p-3 text-sm text-gray-500 dark:text-gray-400">No items found.</div>
                 )}
               </div>
             )}
             
-            {/* Show selected price feedback */}
             {selectedItem && (
-              <div className="mt-2 text-sm font-bold text-green-700 bg-green-50 p-2.5 rounded-lg border border-green-100">
+              <div className="mt-2 text-sm font-bold text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-500/10 p-2.5 rounded-lg border border-green-100 dark:border-green-800 transition-colors">
                 Selling Price: PHP {selectedItem.selling_price.toFixed(2)} each
               </div>
             )}
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Quantity Sold</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Quantity Sold</label>
             <input 
               type="number" 
               min="1" 
@@ -164,17 +153,17 @@ export default function TransactionModal({ isOpen, onClose, onSave, selectedDate
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
               required 
-              className="w-full p-3 border rounded-lg outline-primaryBlue text-lg font-bold" 
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg outline-primaryBlue text-lg font-bold bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors" 
             />
             {selectedItem && quantity > maxQty && (
-              <p className="text-red-500 text-sm mt-1 font-medium">Exceeds available stock! (Max: {maxQty})</p>
+              <p className="text-red-500 dark:text-red-400 text-sm mt-1 font-medium">Exceeds available stock! (Max: {maxQty})</p>
             )}
           </div>
           
           <button 
             type="submit" 
             disabled={!selectedItem || quantity > maxQty}
-            className="w-full bg-green-500 text-white py-3.5 rounded-xl font-bold hover:bg-green-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed mt-2 text-lg shadow-sm"
+            className="w-full bg-green-500 text-white py-3.5 rounded-xl font-bold hover:bg-green-600 transition-colors disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed mt-2 text-lg shadow-sm"
           >
             {txnToEdit ? 'Update Sale' : 'Record Sale'}
           </button>

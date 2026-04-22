@@ -448,6 +448,21 @@ def add_expense(expense: ExpenseCreate, user_id: str = Depends(get_current_user)
         return {"status": "success", "data": response.data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+@app.put("/api/expenses/{expense_id}")
+def update_expense(expense_id: str, expense: ExpenseCreate, user_id: str = Depends(get_current_user)):
+    try:
+        updated_data = {
+            "expense_date": expense.expense_date,
+            "category": expense.category,
+            "description": expense.description,
+            "amount": expense.amount
+        }
+        # Security check: .eq("user_id", user_id) ensures they can only edit THEIR OWN expenses!
+        response = supabase.table("expenses").update(updated_data).eq("id", expense_id).eq("user_id", user_id).execute()
+        return {"status": "success", "data": response.data}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.delete("/api/expenses/{expense_id}")
 def delete_expense(expense_id: str, user_id: str = Depends(get_current_user)):
