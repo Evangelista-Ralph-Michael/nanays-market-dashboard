@@ -1,7 +1,7 @@
 // src/pages/Signup.jsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { User, Lock, Mail, Briefcase, Eye, EyeOff, Loader2, TrendingUp } from 'lucide-react';
+import { User, Lock, Mail, Briefcase, Eye, EyeOff, Loader2, TrendingUp, Sun, Moon } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function Signup() {
@@ -10,6 +10,34 @@ export default function Signup() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // --- DARK MODE LOGIC ---
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    const storedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (storedTheme === 'dark' || (!storedTheme && prefersDark)) {
+      setIsDarkMode(true);
+      document.documentElement.classList.add('dark');
+    } else {
+      setIsDarkMode(false);
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    if (isDarkMode) {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+      setIsDarkMode(false);
+    } else {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+      setIsDarkMode(true);
+    }
+  };
+  // -----------------------
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,9 +70,17 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row-reverse bg-gray-50 dark:bg-gray-900 transition-colors">
+    <div className="min-h-screen flex flex-col md:flex-row-reverse bg-gray-50 dark:bg-gray-900 transition-colors relative">
       
-      {/* RIGHT SIDE: Branding Panel (Reversed for visual variation from login) */}
+      {/* FLOATING DARK MODE TOGGLE */}
+      <button 
+        onClick={toggleDarkMode}
+        className="absolute top-4 right-4 md:top-8 md:left-8 md:right-auto p-3 rounded-full bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors shadow-sm z-50"
+      >
+        {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+      </button>
+
+      {/* RIGHT SIDE: Branding Panel */}
       <div className="hidden md:flex flex-col justify-center w-1/2 bg-gradient-to-br from-blue-900 to-blue-600 text-white p-12 lg:p-24 relative overflow-hidden">
         <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-white/10 rounded-full blur-3xl"></div>
         <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-blue-400/20 rounded-full blur-3xl"></div>

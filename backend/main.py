@@ -63,6 +63,12 @@ class PasswordChange(BaseModel):
     current_password: str
     new_password: str
     confirm_new_password: str
+
+class PasswordReset(BaseModel):
+    username: str
+    email: str
+    new_password: str
+    confirm_password: str
 # ----------------------------------------
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -543,6 +549,33 @@ def login(user: UserLogin):
                 "role": db_user["role"]
             }
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/auth/reset-password")
+def reset_password(data: PasswordReset):
+    # 1. Check if passwords match
+    if data.new_password != data.confirm_password:
+        return {"status": "error", "message": "Passwords do not match."}
+        
+    # 2. Check password strength
+    if not re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,}$", data.new_password):
+        return {"status": "error", "message": "Password must be at least 8 characters long and include an uppercase letter, a lowercase letter, and a number."}
+
+    try:
+        # 3. Security Check: Verify user exists with this exact username AND email
+        response = supabase.table("users").select("id").eq("username", data.username).eq("email", data.email).execute()
+        
+        if len(response.data) == 0:
+            return {"status": "error", "message": "Account verification failed. Invalid username or email."}
+            
+        user_id = response.data[0]["id"]
+        
+        # 4. Hash the new password and update the database
+        new_hash = get_password_hash(data.new_password)
+        supabase.table("users").update({"password_hash": new_hash}).eq("id", user_id).execute()
+        
+        return {"status": "success", "message": "Password reset successfully! You can now log in."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
