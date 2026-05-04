@@ -81,7 +81,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
 
       setIsFlying(true);
       setClickCount(0); 
-      toast("🚀 SECRET MODE ACTIVATED! 📈", { icon: '🤑', duration: 4000 });
+      toast("🥚Easter Egg ACTIVATED!", { icon: '🐣', duration: 4000 });
       
       setTimeout(() => {
         setIsFlying(false);
@@ -160,7 +160,7 @@ export default function Sidebar({ isOpen, setIsOpen }) {
           </button>
 
           <p className="text-xs font-semibold text-gray-400 dark:text-gray-600 text-center uppercase tracking-wider">
-            v2.0 Multi-Tenant
+            Business Inteligence
           </p>
         </div>
       </div>
@@ -210,8 +210,8 @@ export default function Sidebar({ isOpen, setIsOpen }) {
             alt="Easter Egg 2" 
             className="stonks-3 w-48 h-48 md:w-72 md:h-72 object-contain rounded-xl shadow-2xl"
           />
-          <div className="stonks-2 text-[60px] md:text-[100px] font-extrabold text-red-500 drop-shadow-[0_5px_5px_rgba(255,255,255,0.8)]">
-            <p>Kupal na nero</p>
+          <div className="stonks-2 text-[60px] md:text-[100px] font-bold text-pink-500 drop-shadow-[0_5px_5px_rgba(255,255,255,0.8)]">
+            <p>Nero Arbert De Paz</p>
           </div>
         </div>
       )}

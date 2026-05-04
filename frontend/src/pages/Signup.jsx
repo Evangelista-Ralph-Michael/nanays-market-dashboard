@@ -97,8 +97,9 @@ export default function Signup() {
           </h2>
           <div className="space-y-4 text-blue-100 text-lg max-w-md">
             <p className="flex items-center gap-2">✨ Track your true Net Profit</p>
-            <p className="flex items-center gap-2">📦 Smart Inventory Alerts</p>
-            <p className="flex items-center gap-2">🧾 Instant PDF Receipts</p>
+            <p className="flex items-center gap-2">📦 Manage Your Inventory</p>
+            <p className="flex items-center gap-2">📊 Sales Trends</p>
+        
           </div>
         </div>
       </div>
@@ -115,7 +116,6 @@ export default function Signup() {
           </div>
 
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Create an account</h2>
-          <p className="text-gray-500 dark:text-gray-400 mb-8">Join thousands of smart business owners.</p>
 
           <form className="space-y-4" onSubmit={handleSubmit}>
             {error && <div className="bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 p-4 rounded-xl text-sm font-semibold border border-red-100 dark:border-red-900/50">{error}</div>}

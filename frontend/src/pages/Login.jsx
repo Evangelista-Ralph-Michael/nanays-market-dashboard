@@ -127,7 +127,7 @@ export default function Login() {
             Manage your business <br/>with confidence.
           </h2>
           <p className="text-blue-100 text-lg max-w-md">
-            The all-in-one POS, inventory, and financial intelligence platform designed for modern business owners.
+            Track daily sales, manage inventory, and monitor KPIs from a single platform.
           </p>
         </div>
       </div>
